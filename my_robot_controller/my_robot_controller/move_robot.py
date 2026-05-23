@@ -1,39 +1,47 @@
 import rclpy
+import numpy as np
+
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
+from ackermann_msgs.msg import AckermannDriveStamped
 
-from geometry_msgs.msg import Twist
 
 class Controller(Node):
 
     def __init__(self):
         super().__init__('move_robot')
-        self.pub = self.create_publisher(Twist,'cmd_vel',10)
+        self.max_lidar_dist = 3000000
+        self.StatusLidar = None
         
-        #Move robot fwd
-        msg = Twist()
-        msg.linear.x = 0.5
-        msg.linear.y = 0.0
-        msg.linear.z = 0.0
-        msg.angular.x = 0.0
-        msg.angular.y = 0.0
-        msg.angular.z = 0.0
-        self.pub.publish(msg)
+        self.laser_sub = self.create_subscription(LaserScan,'/scan',self.laser_callback,10)
+        self.drive_pub = self.create_publisher(AckermannDriveStamped,'/drive',10)
         
-        timer_period = 10.0
-        self.tmr = self.create_timer(timer_period,self.timer_callback)
+    def proprocess_lidar(self,ranges):
+        self.radians_per_element = (2*np.pi)/len(ranges)
+        proc_ranges = np.array(ranges[135:-135])
+        proc_ranges = np.convolve(proc_ranges, np.ones(self.preprocess_conv_size), 'same') / self.preprocess_conv_size
+        proc_ranges = np.clip(proc_ranges, 0, self.max_lidar_dist)
+        return proc_ranges
         
-    def timer_callback(self):
-       #stop the robot
-        msg = Twist()
-        msg.linear.x = 0.5
-        msg.linear.y = 0.0
-        msg.linear.z = 0.0
-        msg.angular.x = 0.0
-        msg.angular.y = 0.0
-        msg.angular.z = 0.0
-        self.pub.publish(msg)
+    def laser_callback(self,scan_msg:LaserScan):
+        #1. Convertir los datos a algo facil de usar
+        lista_rayos = list(scan_msg.ranges)
+        promedio = sum(lista_rayos)/len(lista_rayos)
+        #2. Extraer la distancia de las zonas clave (frente,izquierda,derecha)
+        #3. Tomar una decision basada en la distancia
+        #4. Crear el mensaje ackermann y publicarlo
+        if lista_rayos == lista_rayos[500:580]:
+            self.StatusLidar = 'frente'
+            
+        elif lista_rayos == lista_rayos[900:1000]:
+            self.StatusLidar = 'izquierda'
+        elif lista_rayos == lista_rayos[80:180]:
+            self.StatusLidar = 'derecha'
+        else:
+            print('Otro valor')
         
+                
 def main(args=None):
     rclpy.init(args=args)
     node = Controller()
