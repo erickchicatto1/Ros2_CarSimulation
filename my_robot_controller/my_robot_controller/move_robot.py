@@ -13,6 +13,7 @@ class Controller(Node):
         super().__init__('move_robot')
         self.max_lidar_dist = 3000000
         self.StatusLidar = None
+        self.preprocess_conv_size=3
         
         self.laser_sub = self.create_subscription(LaserScan,'/scan',self.laser_callback,10)
         self.drive_pub = self.create_publisher(AckermannDriveStamped,'/drive',10)
@@ -27,21 +28,43 @@ class Controller(Node):
     def laser_callback(self,scan_msg:LaserScan):
         #1. Convertir los datos a algo facil de usar
         lista_rayos = list(scan_msg.ranges)
-        promedio = sum(lista_rayos)/len(lista_rayos)
-        #2. Extraer la distancia de las zonas clave (frente,izquierda,derecha)
-        #3. Tomar una decision basada en la distancia
-        #4. Crear el mensaje ackermann y publicarlo
-        if lista_rayos == lista_rayos[500:580]:
-            self.StatusLidar = 'frente'
-            
-        elif lista_rayos == lista_rayos[900:1000]:
-            self.StatusLidar = 'izquierda'
-        elif lista_rayos == lista_rayos[80:180]:
-            self.StatusLidar = 'derecha'
-        else:
-            print('Otro valor')
+        self.get_logger().info(f"Total de rayos recibidos: {len(lista_rayos)}")
         
+        rebanada_frente = lista_rayos[500:580]
+        distancia_frente = sum(rebanada_frente)/len(rebanada_frente) #por que tenemos que calcular el promedio?
+        
+        rebanada_izquierda = lista_rayos[900:1000]
+        distancia_izquierda = sum(rebanada_izquierda)/len(rebanada_izquierda)
+        
+        rebanada_derecha = lista_rayos[80:180]
+        distancia_derecha = sum(rebanada_derecha)/len(rebanada_derecha)
+        
+        velocidad = 0.0
+        angulo = 0.0
+        
+        self.get_logger().info(f"Frente: {distancia_frente:.2f} | Izq: {distancia_izquierda:.2f} | Der: {distancia_derecha:.2f}")
+        
+        if distancia_frente > 1.5:
+            velocidad = 1.0
+            angulo = 0.0
+            self.get_logger().info(f"Frente: {distancia_frente:.2f} | Izq: {distancia_izquierda:.2f} | Der: {distancia_derecha:.2f}")
+        else:
+            velocidad = 0.4
+            self.get_logger().info(f"Frente: {distancia_frente:.2f} | Izq: {distancia_izquierda:.2f} | Der: {distancia_derecha:.2f}")
+            if distancia_izquierda > distancia_derecha:
+                angulo = 0.4
+                self.get_logger().info(f"Frente: {distancia_frente:.2f} | Izq: {distancia_izquierda:.2f} | Der: {distancia_derecha:.2f}")
+            else:
+                angulo = -0.4
+                self.get_logger().info(f"Frente: {distancia_frente:.2f} | Izq: {distancia_izquierda:.2f} | Der: {distancia_derecha:.2f}")
                 
+                
+        msg = AckermannDriveStamped()
+        msg.drive.speed = velocidad
+        msg.drive.steering_angle = angulo
+        self.drive_pub.publish(msg)
+    
+          
 def main(args=None):
     rclpy.init(args=args)
     node = Controller()
